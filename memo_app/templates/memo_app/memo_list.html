@@ -1,0 +1,188 @@
+{% extends 'memo_app/base.html' %}
+
+{% block title %}メモ一覧 - メモ帳アプリ{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h1>メモ一覧</h1>
+        
+        <!-- 検索フォーム -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-md-5">
+                        {{ search_form.query }}
+                    </div>
+                    <div class="col-md-3">
+                        {{ search_form.tag }}
+                    </div>
+                    <div class="col-md-2">
+                        <select name="favorite" class="form-control">
+                            <option value="">すべて</option>
+                            <option value="true" {% if favorite_filter == 'true' %}selected{% endif %}>お気に入り</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-outline-primary w-100">検索</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- フィルタ状態の表示 -->
+        {% if favorite_filter == 'true' %}
+            <div class="alert alert-info">
+                お気に入りメモを表示中
+                <a href="{% url 'memo_list' %}" class="btn btn-sm btn-outline-secondary ms-2">絞り込み解除</a>
+            </div>
+        {% endif %}
+        
+        {% if memos %}
+            {% for memo in memos %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <h5 class="card-title">
+                            <a href="{% url 'memo_detail' memo.pk %}" class="text-decoration-none">
+                                {% if memo.is_favorite %}⭐{% endif %}
+                                {{ memo.title }}
+                            </a>
+                        </h5>
+                        <button class="btn btn-link p-0 favorite-btn" data-memo-id="{{ memo.pk }}" data-is-favorite="{{ memo.is_favorite|yesno:'true,false' }}">
+                            {% if memo.is_favorite %}
+                                <span class="text-warning">⭐</span>
+                            {% else %}
+                                <span class="text-muted">☆</span>
+                            {% endif %}
+                        </button>
+                    </div>
+                    <p class="card-text">{{ memo.get_content_preview }}</p>
+                    <div class="mb-2">
+                        {% for tag in memo.tags.all %}
+                            <span class="badge bg-secondary me-1">{{ tag.name }}</span>
+                        {% endfor %}
+                    </div>
+                    <small class="text-muted">
+                        作成: {{ memo.created_at|date:"Y/m/d H:i" }}
+                        {% if memo.updated_at != memo.created_at %}
+                            | 更新: {{ memo.updated_at|date:"Y/m/d H:i" }}
+                        {% endif %}
+                    </small>
+                </div>
+            </div>
+            {% endfor %}
+            
+            <!-- ページネーション -->
+            {% if is_paginated %}
+            <nav aria-label="Page navigation">
+                <ul class="pagination justify-content-center">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}">前へ</a>
+                        </li>
+                    {% endif %}
+                    
+                    <li class="page-item active">
+                        <span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                    </li>
+                    
+                    {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}">次へ</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+        {% else %}
+            <div class="alert alert-info">
+                {% if favorite_filter == 'true' %}
+                    お気に入りメモはありません。
+                {% else %}
+                    メモが見つかりませんでした。
+                {% endif %}
+                <a href="{% url 'memo_create' %}" class="alert-link">新しいメモを作成</a>してください。
+            </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5>クイックフィルタ</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    <a href="{% url 'memo_list' %}" class="list-group-item list-group-item-action {% if not favorite_filter %}active{% endif %}">
+                        すべてのメモ
+                    </a>
+                    <a href="?favorite=true" class="list-group-item list-group-item-action {% if favorite_filter == 'true' %}active{% endif %}">
+                        ⭐ お気に入り
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5>タグ一覧</h5>
+            </div>
+            <div class="card-body">
+                {% for tag in tags %}
+                    <a href="?tag={{ tag.pk }}" class="badge bg-light text-dark me-1 mb-1 text-decoration-none">
+                        {{ tag.name }}
+                    </a>
+                {% empty %}
+                    <p class="text-muted">タグがありません</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// お気に入りボタンの処理
+document.addEventListener('DOMContentLoaded', function() {
+    const favoriteButtons = document.querySelectorAll('.favorite-btn');
+    
+    favoriteButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const memoId = this.dataset.memoId;
+            const isFavorite = this.dataset.isFavorite === 'true';
+            
+            fetch(`/toggle-favorite/${memoId}/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.is_favorite) {
+                    this.innerHTML = '<span class="text-warning">⭐</span>';
+                    this.dataset.isFavorite = 'true';
+                } else {
+                    this.innerHTML = '<span class="text-muted">☆</span>';
+                    this.dataset.isFavorite = 'false';
+                }
+                
+                // タイトルの星も更新
+                const cardTitle = this.closest('.card-body').querySelector('.card-title a');
+                if (data.is_favorite) {
+                    if (!cardTitle.textContent.startsWith('⭐')) {
+                        cardTitle.innerHTML = '⭐' + cardTitle.innerHTML;
+                    }
+                } else {
+                    cardTitle.innerHTML = cardTitle.innerHTML.replace('⭐', '');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

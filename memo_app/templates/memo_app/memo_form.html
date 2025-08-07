@@ -1,0 +1,228 @@
+{% extends 'memo_app/base.html' %}
+
+{% block title %}
+    {% if object %}メモ編集{% else %}メモ作成{% endif %} - メモ帳アプリ
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h1>
+            {% if object %}メモを編集{% else %}新しいメモを作成{% endif %}
+        </h1>
+        
+        <form method="post">
+            {% csrf_token %}
+            
+            <div class="mb-3">
+                <label for="{{ form.title.id_for_label }}" class="form-label">{{ form.title.label }}</label>
+                {{ form.title }}
+                {% if form.title.errors %}
+                    <div class="text-danger">{{ form.title.errors }}</div>
+                {% endif %}
+            </div>
+            
+            <div class="mb-3">
+                <label for="{{ form.content.id_for_label }}" class="form-label">{{ form.content.label }}</label>
+                {{ form.content }}
+                {% if form.content.errors %}
+                    <div class="text-danger">{{ form.content.errors }}</div>
+                {% endif %}
+            </div>
+            
+            <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label">{{ form.tags.label }}</label>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createTagModal">
+                        新しいタグを作成
+                    </button>
+                </div>
+                <div class="row" id="tags-container">
+                    {% for choice in form.tags %}
+                        <div class="col-md-3 mb-2">
+                            {{ choice.tag }}
+                            <label for="{{ choice.id_for_label }}" class="form-check-label ms-1">{{ choice.choice_label }}</label>
+                        </div>
+                    {% endfor %}
+                </div>
+                {% if form.tags.errors %}
+                    <div class="text-danger">{{ form.tags.errors }}</div>
+                {% endif %}
+            </div>
+            
+            <div class="mb-3 form-check">
+                {{ form.is_favorite }}
+                <label class="form-check-label" for="{{ form.is_favorite.id_for_label }}">
+                    {{ form.is_favorite.label }}
+                </label>
+                {% if form.is_favorite.errors %}
+                    <div class="text-danger">{{ form.is_favorite.errors }}</div>
+                {% endif %}
+            </div>
+            
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    {% if object %}更新{% else %}作成{% endif %}
+                </button>
+                <a href="{% if object %}{% url 'memo_detail' object.pk %}{% else %}{% url 'memo_list' %}{% endif %}" 
+                   class="btn btn-secondary">キャンセル</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- タグ作成モーダル -->
+<div class="modal fade" id="createTagModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新しいタグを作成</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createTagForm">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="tagName" class="form-label">タグ名</label>
+                        <input type="text" class="form-control" id="tagName" name="tag_name" maxlength="50" placeholder="タグ名を入力してください">
+                        <div class="form-text">最大50文字まで入力できます。</div>
+                        <div id="tagError" class="text-danger" style="display: none;"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                <button type="button" class="btn btn-primary" id="createTagBtn">作成</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const createTagBtn = document.getElementById('createTagBtn');
+    const tagNameInput = document.getElementById('tagName');
+    const tagError = document.getElementById('tagError');
+    const tagsContainer = document.getElementById('tags-container');
+    const modal = new bootstrap.Modal(document.getElementById('createTagModal'));
+    
+    createTagBtn.addEventListener('click', function() {
+        const tagName = tagNameInput.value.trim();
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        
+        if (!tagName) {
+            showError('タグ名を入力してください。');
+            return;
+        }
+        
+        // ボタンを無効化
+        createTagBtn.disabled = true;
+        createTagBtn.textContent = '作成中...';
+        
+        fetch('{% url "ajax_tag_create" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `tag_name=${encodeURIComponent(tagName)}`
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showError('タグの作成に失敗しました。');
+        })
+        .finally(() => {
+            // ボタンを元に戻す
+            createTagBtn.disabled = false;
+            createTagBtn.textContent = '作成';
+        });
+    });
+    
+    function addTagToForm(tagId, tagName) {
+        // 新しいチェックボックスを作成
+        const newTagDiv = document.createElement('div');
+        newTagDiv.className = 'col-md-3 mb-2';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.name = 'tags';
+        checkbox.value = tagId;
+        checkbox.id = `id_tags_${tagId}`;
+        checkbox.className = 'form-check-input';
+        checkbox.checked = true; // 新規作成したタグは自動的にチェック
+        
+        const label = document.createElement('label');
+        label.htmlFor = checkbox.id;
+        label.className = 'form-check-label ms-1';
+        label.textContent = tagName;
+        
+        newTagDiv.appendChild(checkbox);
+        newTagDiv.appendChild(label);
+        
+        // タグコンテナに追加
+        tagsContainer.appendChild(newTagDiv);
+    }
+    
+    function showError(message) {
+        tagError.textContent = message;
+        tagError.style.display = 'block';
+    }
+    
+    function hideError() {
+        tagError.style.display = 'none';
+    }
+    
+    function showAlert(type, message) {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        // コンテナの最初に挿入
+        const container = document.querySelector('.container.mt-4');
+        const firstChild = container.firstElementChild.nextElementSibling; // CSRF token の次
+        container.insertBefore(alertDiv, firstChild);
+        
+        // 3秒後に自動で非表示
+        setTimeout(() => {
+            if (alertDiv.parentNode) {
+                alertDiv.remove();
+            }
+        }, 3000);
+    }
+    
+    // モーダルが閉じられた時の処理
+    document.getElementById('createTagModal').addEventListener('hidden.bs.modal', function() {
+        tagNameInput.value = '';
+        hideError();
+        createTagBtn.disabled = false;
+        createTagBtn.textContent = '作成';
+    });
+    
+    // Enterキーでタグ作成
+    tagNameInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            createTagBtn.click();
+        }
+    });
+});
+</script>
+{% endblock %}then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showError(data.error);
+            } else {
+                // 成功時の処理
+                addTagToForm(data.id, data.name);
+                tagNameInput.value = '';
+                hideError();
+                modal.hide();
+                
+                // 成功メッセージを表示
+                showAlert('success', data.message);
+            }
+        })
+        .   
